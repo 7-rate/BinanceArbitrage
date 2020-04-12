@@ -14,7 +14,7 @@ api_key = config.get('api', 'key')
 api_secret = config.get('api', 'secret')
 
 # 利益率設定
-minROI = 1.0002
+minROI = 1.0000
 #手数料設定
 commission = 0.00075 * 3
 
@@ -91,44 +91,90 @@ def ArbitrageCheck():
                         pivalt_b = float(orderbook_tickers_dict[vd[1]]['b'])
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
-                            roi = 1 / (tgtpiv_b * pivalt_b * alttgt_b)
+                            roi = tgtpiv_b * pivalt_b * alttgt_b
+                            roi -= commission
                             print('-1- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
-                            roi = 1 / ((tgtpiv_b * pivalt_b) / tgtalt_a)
+                            roi = (tgtpiv_b * pivalt_b) / tgtalt_a
+                            roi -= commission
                             print('-2- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
                     else:
                         altpiv_a = float(orderbook_tickers_dict[vd[1]]['a'])
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
-                            roi = 1 / (tgtpiv_b / altpiv_a * alttgt_b)
+                            roi = (tgtpiv_b / altpiv_a) * alttgt_b
+                            roi -= commission
                             print('-3- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
+
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
-                            roi = 1 / (tgtpiv_b / altpiv_a / tgtalt_a)
+                            roi = (tgtpiv_b / altpiv_a) / tgtalt_a
+                            roi -= commission
                             print('-4- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
+
                 else:
                     pivtgt_a = float(orderbook_tickers_dict[vd[0]]['a'])
                     if vd[1].find(piv) == 0:
                         pivalt_b = float(orderbook_tickers_dict[vd[1]]['b'])
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
-                            roi = pivtgt_a / pivalt_b / alttgt_b
+                            roi = 1 / ((pivtgt_a / pivalt_b) / alttgt_b)
+                            roi -= commission
                             print('-5- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
+
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
-                            roi = (pivtgt_a / pivalt_b) * tgtalt_a
+                            roi = 1 / ((pivtgt_a / pivalt_b) * tgtalt_a)
+                            roi -= commission
                             print('-6- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
+
                     else:
                         altpiv_a = float(orderbook_tickers_dict[vd[1]]['a'])
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
-                            roi = (pivtgt_a * altpiv_a) / alttgt_b
+                            roi = 1 / ((pivtgt_a * altpiv_a) / alttgt_b)
+                            roi -= commission
                             print('-7- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
+
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
-                            roi = pivtgt_a * altpiv_a * tgtalt_a
+                            roi = 1 / (pivtgt_a * altpiv_a * tgtalt_a)
+                            roi -= commission
                             print('-8- roi:{}'.format(roi))
+                            if roi > minROI:
+                                print(orderbook_tickers_dict[vd[0]])
+                                print(orderbook_tickers_dict[vd[1]])
+                                print(orderbook_tickers_dict[vd[2]])
+
             except:
                 continue
             # try:
