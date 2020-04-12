@@ -1,0 +1,3 @@
+# BinanceArbitrage
+
+Binanceで3通貨間アービトラージを目指す勉強用コード置き場
