@@ -13,10 +13,12 @@ config.read('./config.ini')
 api_key = config.get('api', 'key')
 api_secret = config.get('api', 'secret')
 
-# 利益率設定
-minROI = 1.0000
 #手数料設定
 commission = 0.00075 * 3
+
+# 利益率設定
+minROI = 1.0003
+minROI += commission
 
 # 全コイン種読み込み
 f = open('alts.txt')
@@ -27,18 +29,17 @@ f.close()
 orderbook_tickers_dict = {}
 trade_status_dict = {}
 asset_balances = {}
-symbols = []
 target = 'BTC'
 pivots = ['BTC', 'ETH', 'USDT', 'BUSD', 'TUSD', 'USDC', 'PAX']
-
 
 # クライアント初期化
 client = Client(api_key, api_secret, {'timeout':600})
 
 # シンボル更新
+symbols = set()
 orderbook_tickers = client.get_orderbook_tickers()
 for ticker in orderbook_tickers:
-    symbols.append(ticker['symbol'])
+    symbols.add(ticker['symbol'])
 
 # サーバ-クライアント間レイテンシ確認
 def test_time():
@@ -49,29 +50,29 @@ def update_orderbook_dict(msg):
     for d in msg:
         orderbook_tickers_dict[d['s']] = d
     data = ArbitrageCheck()
-#    for element in data:
-#        print(element)
+    if data.count != 0:
+        print(data)
 
 # callback function for start_user_socket
 def update_user(msg):
     pass
 
 def validData(tgt, piv, alt):
-    validData = []
+    validData = set()
     if tgt+piv in symbols:
-        validData.append(tgt+piv)
+        validData.add(tgt+piv)
     elif piv+tgt in symbols:
-        validData.append(piv+tgt)
+        validData.add(piv+tgt)
 
     if piv+alt in symbols:
-        validData.append(piv+alt)
+        validData.add(piv+alt)
     elif alt+piv in symbols:
-        validData.append(alt+piv)
+        validData.add(alt+piv)
 
     if tgt+alt in symbols:
-        validData.append(tgt+alt)
+        validData.add(tgt+alt)
     elif alt+tgt in symbols:
-        validData.append(alt+tgt)
+        validData.add(alt+tgt)
 
     return validData
 
@@ -79,6 +80,7 @@ def validData(tgt, piv, alt):
 def ArbitrageCheck():
     tgt = target
     data = []
+    start = time.time()
     for piv in pivots:
         for alt in alts:
             vd = validData(tgt, piv, alt)
@@ -92,43 +94,53 @@ def ArbitrageCheck():
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
                             roi = tgtpiv_b * pivalt_b * alttgt_b
-                            roi -= commission
-                            print('-1- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
+                                data.append({
+                                        'serial':1,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], tgtpiv_b, 'sell'],
+                                        '2nd':[vd[1], pivalt_b, 'sell'],
+                                        '3rd':[vd[2], alttgt_b, 'sell']
+                                    })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
                             roi = (tgtpiv_b * pivalt_b) / tgtalt_a
-                            roi -= commission
-                            print('-2- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
+                                data.append({
+                                        'serial':2,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], tgtpiv_b, 'sell'],
+                                        '2nd':[vd[1], pivalt_b, 'sell'],
+                                        '3rd':[vd[2], tgtalt_a, 'buy']
+                                    })
                     else:
                         altpiv_a = float(orderbook_tickers_dict[vd[1]]['a'])
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
                             roi = (tgtpiv_b / altpiv_a) * alttgt_b
-                            roi -= commission
-                            print('-3- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
-
+                                data.append({
+                                        'serial':3,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], tgtpiv_b, 'sell'],
+                                        '2nd':[vd[1], altpiv_a, 'buy'],
+                                        '3rd':[vd[2], alttgt_b, 'sell']
+                                    })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
                             roi = (tgtpiv_b / altpiv_a) / tgtalt_a
-                            roi -= commission
-                            print('-4- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
-
+                                data.append({
+                                        'serial':4,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], tgtpiv_b, 'sell'],
+                                        '2nd':[vd[1], altpiv_a, 'buy'],
+                                        '3rd':[vd[2], tgtalt_a, 'buy']
+                                    })
                 else:
                     pivtgt_a = float(orderbook_tickers_dict[vd[0]]['a'])
                     if vd[1].find(piv) == 0:
@@ -136,104 +148,56 @@ def ArbitrageCheck():
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
                             roi = 1 / ((pivtgt_a / pivalt_b) / alttgt_b)
-                            roi -= commission
-                            print('-5- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
-
+                                data.append({
+                                        'serial':5,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], pivtgt_a, 'buy'],
+                                        '2nd':[vd[1], pivalt_b, 'sell'],
+                                        '3rd':[vd[2], alttgt_b, 'sell']
+                                    })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
                             roi = 1 / ((pivtgt_a / pivalt_b) * tgtalt_a)
-                            roi -= commission
-                            print('-6- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
-
+                                data.append({
+                                        'serial':6,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], pivtgt_a, 'buy'],
+                                        '2nd':[vd[1], pivalt_b, 'sell'],
+                                        '3rd':[vd[2], tgtalt_a, 'buy']
+                                    })
                     else:
                         altpiv_a = float(orderbook_tickers_dict[vd[1]]['a'])
                         if vd[2].find(alt) == 0:
                             alttgt_b = float(orderbook_tickers_dict[vd[2]]['b'])
                             roi = 1 / ((pivtgt_a * altpiv_a) / alttgt_b)
-                            roi -= commission
-                            print('-7- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
-
+                                data.append({
+                                        'serial':7,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], pivtgt_a, 'buy'],
+                                        '2nd':[vd[1], altpiv_a, 'buy'],
+                                        '3rd':[vd[2], alttgt_b, 'sell']
+                                    })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd[2]]['a'])
                             roi = 1 / (pivtgt_a * altpiv_a * tgtalt_a)
-                            roi -= commission
-                            print('-8- roi:{}'.format(roi))
                             if roi > minROI:
-                                print(orderbook_tickers_dict[vd[0]])
-                                print(orderbook_tickers_dict[vd[1]])
-                                print(orderbook_tickers_dict[vd[2]])
-
+                                data.append({
+                                        'serial':8,
+                                        'roi':roi,
+                                        'target':tgt,
+                                        '1st':[vd[0], pivtgt_a, 'buy'],
+                                        '2nd':[vd[1], altpiv_a, 'buy'],
+                                        '3rd':[vd[2], tgtalt_a, 'buy']
+                                    })
             except:
                 continue
-            # try:
-            #     tgtpiv_b, tgtpiv_a = float(orderbook_tickers_dict[tgt+piv]['b']), float(orderbook_tickers_dict[tgt+piv]['a'])
-            #     altpiv_b, altpiv_a = float(orderbook_tickers_dict[alt+piv]['b']), float(orderbook_tickers_dict[alt+piv]['a'])
-            #     try:
-            #         alttgt_b, alttgt_a = float(orderbook_tickers_dict[alt+tgt]['b']), float(orderbook_tickers_dict[alt+tgt]['a'])
-            #         # tgt → alt → piv → tgt
-            #         roi = altpiv_b / (alttgt_a * tgtpiv_a)
-            #         roi -= commission
-            #         if roi > minROI:
-            #             data.append(
-            #                 {'roi':roi,
-            #                 'debug':1,
-            #                 'target':tgt,
-            #                 '1st':[alt+tgt, alttgt_a, 'b'],
-            #                 '2nd':[alt+piv, altpiv_b, 's'],
-            #                 '3rd':[tgt+piv, tgtpiv_a, 'b']
-            #                 })
-            #         # tgt → piv → alt → tgt
-            #         roi = (tgtpiv_b / altpiv_a) * alttgt_b
-            #         roi -= commission
-            #         if roi > minROI:
-            #             data.append(
-            #                 {'roi':roi,
-            #                 'debug':2,
-            #                 'target':tgt,
-            #                 '1st':[tgt+piv, tgtpiv_b, 'b'],
-            #                 '2nd':[alt+piv, altpiv_a, 'b'],
-            #                 '3rd':[alt+tgt, alttgt_b, 's']
-            #                 })
-            #     except:
-            #         alttgt_b, alttgt_a = float(orderbook_tickers_dict[tgt+alt]['b']), float(orderbook_tickers_dict[tgt+alt]['a'])
-            #         # tgt → alt → piv → tgt
-            #         roi = (altpiv_b * alttgt_a) / tgtpiv_a
-            #         roi -= commission
-            #         if roi > minROI:
-            #             data.append(
-            #                 {'roi':roi,
-            #                 'debug':3,
-            #                 'target':tgt,
-            #                 '1st':[tgt+alt, alttgt_a, 's'],
-            #                 '2nd':[alt+piv, altpiv_b, 's'],
-            #                 '3rd':[tgt+piv, tgtpiv_a, 'b']
-            #                 })
-            #         # tgt → alt → piv → tgt
-            #         roi = altpiv_a /( alttgt_b * tgtpiv_a )
-            #         roi -= commission
-            #         if roi > minROI:
-            #             data.append(
-            #                 {'roi':roi,
-            #                 'debug':4,
-            #                 'target':tgt,
-            #                 '1st':[tgt+piv, tgtpiv_b, 'b'],
-            #                 '2nd':[alt+piv, altpiv_a, 'b'],
-            #                 '3rd':[tgt+alt, alttgt_b, 'b']
-            #                 })
-            # except:
-            #     continue
+    print('elapsed_time:{}'.format(time.time() - start) + '[sec]')
     return data
 
 bm = BinanceSocketManager(client)
