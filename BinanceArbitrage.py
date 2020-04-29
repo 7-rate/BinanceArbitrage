@@ -1,5 +1,4 @@
 #coding utf8
-
 import time
 import math
 import itertools
@@ -8,18 +7,30 @@ import configparser
 from binance.client import Client
 from binance.websockets import BinanceSocketManager
 
+#TODO 端数処理 minqty maxqty
+#TODO 実取引
+#TODO 高速化対応
+#TODO 起動時にasset_balancesを更新する
+
+# apikeyを取得
 config = configparser.ConfigParser()
 config.read('./config.ini')
 api_key = config.get('api', 'key')
 api_secret = config.get('api', 'secret')
 
-#手数料設定
+# 手数料設定
 commission = 0.00075 * 3
 
 # 利益率設定
-#minROI = 1.0003
+#minROI = 1.0003 #TODO 暫定
 minROI = 0.997
 minROI += commission
+
+# 支払い用BNBの最低量設定
+minBNB = 0.3
+
+# 取引量マージン(倍率)
+volumeMargin = 0.9
 
 # 全コイン種読み込み
 f = open('alts.txt')
@@ -56,7 +67,12 @@ def update_orderbook_dict(msg):
 
 # callback function for start_user_socket
 def update_user(msg):
-    pass
+    if msg['e'] == 'executionReport':
+        pass
+    else:
+        balances = msg['B']
+        for i in balances:
+            asset_balances[i['a']] = i
 
 # 全シンボルから有効なシンボルの組み合わせを返す
 def validData(tgt, piv, alt):
@@ -86,12 +102,10 @@ def arbitrageCheck():
     for piv in pivots:
         for alt in alts:
             vd = validData(tgt, piv, alt)
-            if len(vd) < 3:
+            if len(vd) != 3:
                 continue
             try:
-                vd0 = vd[0]
-                vd1 = vd[1]
-                vd2 = vd[2]
+                vd0, vd1, vd2 = vd
                 if vd0.find(tgt) == 0:
                     tgtpiv_b = float(orderbook_tickers_dict[vd0]['b'])
                     if vd1.find(piv) == 0:
@@ -100,26 +114,19 @@ def arbitrageCheck():
                             alttgt_b = float(orderbook_tickers_dict[vd2]['b'])
                             roi = tgtpiv_b * pivalt_b * alttgt_b
                             if roi > minROI:
-                                data.append({
-                                        'serial':1,
-                                        'roi':roi,
-                                        'target':tgt,
+                                data.append({'serial':1, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, tgtpiv_b, 'sell'],
                                         '2nd':[vd1, pivalt_b, 'sell'],
-                                        '3rd':[vd2, alttgt_b, 'sell']
-                                    })
+                                        '3rd':[vd2, alttgt_b, 'sell'] })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd2]['a'])
                             roi = (tgtpiv_b * pivalt_b) / tgtalt_a
                             if roi > minROI:
                                 data.append({
-                                        'serial':2,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':2, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, tgtpiv_b, 'sell'],
                                         '2nd':[vd1, pivalt_b, 'sell'],
-                                        '3rd':[vd2, tgtalt_a, 'buy']
-                                    })
+                                        '3rd':[vd2, tgtalt_a, 'buy'] })
                     else:
                         altpiv_a = float(orderbook_tickers_dict[vd1]['a'])
                         if vd2.find(alt) == 0:
@@ -127,25 +134,19 @@ def arbitrageCheck():
                             roi = (tgtpiv_b / altpiv_a) * alttgt_b
                             if roi > minROI:
                                 data.append({
-                                        'serial':3,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':3, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, tgtpiv_b, 'sell'],
                                         '2nd':[vd1, altpiv_a, 'buy'],
-                                        '3rd':[vd2, alttgt_b, 'sell']
-                                    })
+                                        '3rd':[vd2, alttgt_b, 'sell'] })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd2]['a'])
                             roi = (tgtpiv_b / altpiv_a) / tgtalt_a
                             if roi > minROI:
                                 data.append({
-                                        'serial':4,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':4, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, tgtpiv_b, 'sell'],
                                         '2nd':[vd1, altpiv_a, 'buy'],
-                                        '3rd':[vd2, tgtalt_a, 'buy']
-                                    })
+                                        '3rd':[vd2, tgtalt_a, 'buy'] })
                 else:
                     pivtgt_a = float(orderbook_tickers_dict[vd0]['a'])
                     if vd1.find(piv) == 0:
@@ -155,25 +156,19 @@ def arbitrageCheck():
                             roi = 1 / ((pivtgt_a / pivalt_b) / alttgt_b)
                             if roi > minROI:
                                 data.append({
-                                        'serial':5,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':5, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, pivtgt_a, 'buy'],
                                         '2nd':[vd1, pivalt_b, 'sell'],
-                                        '3rd':[vd2, alttgt_b, 'sell']
-                                    })
+                                        '3rd':[vd2, alttgt_b, 'sell'] })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd2]['a'])
                             roi = 1 / ((pivtgt_a / pivalt_b) * tgtalt_a)
                             if roi > minROI:
                                 data.append({
-                                        'serial':6,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':6, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, pivtgt_a, 'buy'],
                                         '2nd':[vd1, pivalt_b, 'sell'],
-                                        '3rd':[vd2, tgtalt_a, 'buy']
-                                    })
+                                        '3rd':[vd2, tgtalt_a, 'buy'] })
                     else:
                         altpiv_a = float(orderbook_tickers_dict[vd1]['a'])
                         if vd2.find(alt) == 0:
@@ -181,36 +176,76 @@ def arbitrageCheck():
                             roi = 1 / ((pivtgt_a * altpiv_a) / alttgt_b)
                             if roi > minROI:
                                 data.append({
-                                        'serial':7,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':7, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, pivtgt_a, 'buy'],
                                         '2nd':[vd1, altpiv_a, 'buy'],
-                                        '3rd':[vd2, alttgt_b, 'sell']
-                                    })
+                                        '3rd':[vd2, alttgt_b, 'sell'] })
                         else:
                             tgtalt_a = float(orderbook_tickers_dict[vd2]['a'])
                             roi = 1 / (pivtgt_a * altpiv_a * tgtalt_a)
                             if roi > minROI:
                                 data.append({
-                                        'serial':8,
-                                        'roi':roi,
-                                        'target':tgt,
+                                        'serial':8, 'roi':roi, 'target':tgt,
                                         '1st':[vd0, pivtgt_a, 'buy'],
                                         '2nd':[vd1, altpiv_a, 'buy'],
-                                        '3rd':[vd2, tgtalt_a, 'buy']
-                                    })
+                                        '3rd':[vd2, tgtalt_a, 'buy'] })
             except:
                 continue
     #print('elapsed_time:{}'.format(time.time() - start) + '[sec]')
     return data
 
+# 引数の通貨の持っている量取得
+def getAssetBalance(asset):
+    return 5.0 #TODO デバッグ用暫定
+    try:
+        return float(asset_balances(asset))
+    except:
+        return 0.0
+
+# 手数料支払い用のBNB量が十分か
+def enoughBNB():
+    BNBbalance = getAssetBalance
+    return True if BNBbalance > minBNB else False
+
 # 利益が出る裁定機会の中から最適な取引を返す
 def getBestTransaction(data):
-    #TODO ROIが最も高い
-    #TODO 量が可能
+
+    # 最良ROIから順番にチェック。板に出ている取引量が十分か？(マージン込)
     sortedData = sorted(data, key=lambda x:x['roi'], reverse=True)
-    print(sortedData)
+    for data in sortedData:
+        tgtAsset = getAssetBalance(asset=data['target']) # TODO 全量取引に回している。定数で取引量を固定したほうがいいか？
+        ticker_1st = orderbook_tickers_dict[data['1st'][0]]
+        ticker_2nd = orderbook_tickers_dict[data['2nd'][0]]
+        ticker_3rd = orderbook_tickers_dict[data['3rd'][0]]
+        #1st
+        if data['1st'][2] == 'buy':
+            secondAsset = tgtAsset / data['1st'][1]
+            if float(ticker_1st['A']) * volumeMargin > secondAsset:
+                continue
+        else:
+            secondAsset = tgtAsset * data['1st'][1]
+            if float(ticker_1st['B']) * volumeMargin > tgtAsset:
+                continue
+        #2nd
+        if data['2nd'][2] == 'buy':
+            thirdAsset = secondAsset / data['2nd'][1]
+            if float(ticker_2nd['A']) * volumeMargin > thirdAsset:
+                continue
+        else:
+            thirdAsset = secondAsset * data['2nd'][1]
+            if float(ticker_2nd['B']) * volumeMargin > secondAsset:
+                continue
+        #3rd
+        if data['3rd'][2] == 'buy':
+            newTgtAsset = thirdAsset / data['3rd'][1]
+            if float(ticker_3rd['A']) * volumeMargin > newTgtAsset:
+                continue
+        else:
+            newTgtAsset = thirdAsset * data['3rd'][1]
+            if float(ticker_3rd['B']) * volumeMargin > thirdAsset:
+                continue
+        return data
+    return None
 
 bm = BinanceSocketManager(client)
 bm.start_ticker_socket(update_orderbook_dict)
