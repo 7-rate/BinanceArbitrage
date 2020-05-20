@@ -7,10 +7,11 @@ import configparser
 from binance.client import Client
 from binance.websockets import BinanceSocketManager
 
-#TODO 実取引
-#TODO 高速化対応
-#TODO 起動時にasset_balancesを更新する
+#TODO 実取引(成り行き注文)
 #TODO 切り上げ切捨て対応
+#TODO テスト作成
+#TODO ログファイル出力(order, order history, asset balance)
+#TODO 安全装置(資産が減る or 約定しない時にプログラム停止)
 
 # apikeyを取得
 config = configparser.ConfigParser()
@@ -40,7 +41,6 @@ f.close()
 # 各配列初期化
 orderbook_tickers_dict = {}
 trade_status_dict = {}
-asset_balances = {}
 target = 'BTC'
 pivots = ['BTC', 'ETH', 'USDT', 'BUSD', 'TUSD', 'USDC', 'PAX']
 
@@ -53,7 +53,7 @@ orderbook_tickers = client.get_orderbook_tickers()
 for ticker in orderbook_tickers:
     symbols.add(ticker['symbol'])
 
-# 取引の制限量取得
+# 取引の最小数取得
 exchange_info = client.get_exchange_info()
 minQtyInfo = {}
 for sym in exchange_info['symbols']:
@@ -76,12 +76,16 @@ def update_orderbook_dict(msg):
 
 # callback function for start_user_socket
 def update_user(msg):
-    if msg['e'] == 'executionReport':
-        pass
-    else:
-        balances = msg['B']
-        for i in balances:
-            asset_balances[i['a']] = i
+    asset_balance = client.get_account()['balances']
+
+# 所持金の更新
+asset_balance = client.get_account()['balances']
+
+# 所持金の取得
+def getFreeAssetBalance(asset):
+    for ab in asset_balance:
+        if ab['asset'] == asset:
+            return ab['free']
 
 # 全シンボルから有効なシンボルの組み合わせを返す
 def validData(tgt, piv, alt):
@@ -207,7 +211,7 @@ def arbitrageCheck():
 def getAssetBalance(asset):
     return 0.0000001 #TODO デバッグ用暫定
     try:
-        return float(asset_balances(asset))
+        return float(getFreeAssetBalance(asset))
     except:
         return 0.0
 
@@ -232,13 +236,11 @@ def getBestTransaction(data):
             secondAsset = tgtAsset / data['1st'][1]
             if float(ticker_1st['A']) * volumeMargin > secondAsset:
                 if secondAsset < minQtyInfo[data['1st'][0]]:
-                    print(f'{secondAsset}')
                     continue
         else:
             secondAsset = tgtAsset * data['1st'][1]
             if float(ticker_1st['B']) * volumeMargin > tgtAsset:
                 if tgtAsset < minQtyInfo[data['1st'][0]]:
-                    print(f'{secondAsset}')
                     continue
         #2nd
         if data['2nd'][2] == 'buy':
