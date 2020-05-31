@@ -8,27 +8,23 @@ from binance.client import Client
 from binance.websockets import BinanceSocketManager
 
 class BinanceArbitrage:
-    def __init__(self, client, target, starting_amount, minROI, commission):
+    def __init__(self, client, target, startingAmount, minROI, commission):
         self.client = client
         self.target = target                    # target coin
-        self.starting_amount = starting_amount  # 最初の取引に使う量
+        self.startingAmount = startingAmount  # 最初の取引に使う量
         self.minROI = minROI + (commission * 3) # 手数料を考慮した利益率設定
         self.volumeMargin = 0.9                 # 板に出ているコイン量のマージン倍率(少なめに見積る)
 
-        # 全コイン種読み込み
-        # TODO 本当なら最新のコインに対応するため、API叩いて起動毎に取得したほうがいい
-        f = open('alts.txt')
-        self.alts = f.read().split('\n')
-        f.close()
-
-        # TODO starting_amount > 持ってるtarget coin の時にはエラーにする
+        # 全コイン種取得
+        with open('alts.txt') as f:
+            self.alts = f.read().split('\n')
 
         self.orderbook_tickers_dict = {}
         self.trade_status_dict = {}
         self.pivots = ['BTC', 'ETH', 'USDT', 'BUSD', 'TUSD', 'USDC', 'PAX']
         self.minBNB = 0.3 # 支払い用BNBの最低量設定
 
-        # シンボル更新
+        # シンボル取得
         self.symbols = set()
         orderbook_tickers = client.get_orderbook_tickers()
         for ticker in orderbook_tickers:
@@ -45,12 +41,17 @@ class BinanceArbitrage:
 
         # 所持金情報の取得
         self.asset_balance = client.get_account()['balances']
+        if startingAmount > float(self.getFreeAssetBalance(target)):
+            raise Exception("所持金が少ないです")
 
+        # ソケットの確立
+        # 開始はstartArbitrage()で行う
         self.bm = BinanceSocketManager(client)
         self.bm.start_ticker_socket(self.update_orderbook_dict)
         self.bm.start_user_socket(self.update_user)
 
-    # callback function for start_ticker_socket
+    # BinanceSocketManagerからコールバックされる
+    # ここでメイン処理をラッチする
     def update_orderbook_dict(self, msg):
         for d in msg:
             self.orderbook_tickers_dict[d['s']] = d
@@ -59,7 +60,8 @@ class BinanceArbitrage:
         # TODO 本取引。ここで行うのではなく、別スレッドを立てる
         print(transaction)
 
-    # callback function for start_user_socket
+    # BinanceSocketManagerからコールバックされる
+    # ここでアカウントの資産を更新する
     def update_user(self, msg):
         self.asset_balance = client.get_account()['balances']
 
@@ -215,7 +217,7 @@ class BinanceArbitrage:
         # 最良ROIから順番にチェック。板に出ている取引量が十分かの確認(マージン込)
         sortedData = sorted(data, key=lambda x:x['roi'], reverse=True)
         for data in sortedData:
-            tgtAsset = self.getAssetBalance(asset=data['target']) # TODO 全量取引に回している。定数で取引量を固定したほうがいいか？
+            tgtAsset = self.startingAmount
             ticker_1st = self.orderbook_tickers_dict[data['1st'][0]]
             ticker_2nd = self.orderbook_tickers_dict[data['2nd'][0]]
             ticker_3rd = self.orderbook_tickers_dict[data['3rd'][0]]
@@ -274,7 +276,7 @@ if __name__ == "__main__":
     #利益率、手数料、裁定取引に回す量の設定
     minROI = 1.0002
     commission = 0.00075
-    startingAmount = 0.1
+    startingAmount = 0.5
 
     ba = BinanceArbitrage(client, 'ETH', startingAmount, minROI, commission)
     ba.startArbitrage()
