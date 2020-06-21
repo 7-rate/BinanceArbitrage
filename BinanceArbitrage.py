@@ -8,12 +8,13 @@ from binance.client import Client
 from binance.websockets import BinanceSocketManager
 
 class BinanceArbitrage:
-    def __init__(self, client, target, startingAmount, minROI, commission):
+    def __init__(self, client, target, startingAmount, minROI, commission, transact):
         self.client = client
         self.target = target                    # target coin
-        self.startingAmount = startingAmount  # 最初の取引に使う量
+        self.startingAmount = startingAmount    # 最初の取引に使う量
         self.minROI = minROI + (commission * 3) # 手数料を考慮した利益率設定
         self.volumeMargin = 0.9                 # 板に出ているコイン量のマージン倍率(少なめに見積る)
+        self.transact = transact
 
         # 全コイン種取得
         with open('alts.txt') as f:
@@ -39,10 +40,8 @@ class BinanceArbitrage:
                     self.minQtyInfo[sym['symbol']] = float(fil['minQty'])
                     break
 
-        # 所持金情報の取得
-        self.asset_balance = client.get_account()['balances']
-        if startingAmount > float(self.getFreeAssetBalance(target)):
-            raise Exception("所持金が少ないです")
+        # アカウント情報の更新。普段はコールバックから呼ばれるが、初期化タイミングでも呼ぶ。
+        self.update_user()
 
         # ソケットの確立
         # 開始はstartArbitrage()で行う
@@ -57,19 +56,32 @@ class BinanceArbitrage:
             self.orderbook_tickers_dict[d['s']] = d
         data = self.arbitrageCheck()                 # 裁定機会を探す
         transaction = self.getBestTransaction(data)  # 最も優れた裁定機会を取得
-        # TODO 本取引。ここで行うのではなく、別スレッドを立てる
         print(transaction)
+        if self.transact:
+            pass
+            # TODO 本取引。ここで行うのではなく、別スレッドを立てる
+
 
     # BinanceSocketManagerからコールバックされる
     # ここでアカウントの資産を更新する
-    def update_user(self, msg):
+    def update_user(self, msg=0):
         self.asset_balance = client.get_account()['balances']
+
+        if self.transact:
+            # 所持金と手数料用のBNBチェック
+            targetAmount = float(self.getFreeAssetBalance(self.target))
+            if self.startingAmount > targetAmount:
+                raise Exception('所持金が少ないです')
+
+            bnbAmount = float(self.getFreeAssetBalance('BNB'))
+            if self.minBNB > bnbAmount:
+                raise Exception('手数料用BNBが少ないです')
 
     # 裁定取引を開始()
     def startArbitrage(self):
         self.bm.start()
 
-    # サーバ-クライアント間レイテンシ確認
+    # サーバ-クライアントの時間差分確認
     def test_time(self):
         print('server time - client time =', client.get_server_time()['serverTime']-int(time.time()*1000))
 
@@ -78,14 +90,6 @@ class BinanceArbitrage:
         for ab in self.asset_balance:
             if ab['asset'] == asset:
                 return ab['free']
-
-    # 引数の通貨の持っている量取得
-    def getAssetBalance(self, asset):
-        return 0.01 #TODO デバッグ用暫定
-        try:
-            return float(self.getFreeAssetBalance(asset))
-        except:
-            return 0.0
 
     # 全シンボルから有効なシンボルの組み合わせを返す
     def validData(self, tgt, piv, alt):
@@ -207,11 +211,6 @@ class BinanceArbitrage:
         #print('elapsed_time:{}'.format(time.time() - start) + '[sec]')
         return data
 
-    # 手数料支払い用のBNB量が十分か
-    def enoughBNB(self):
-        BNBbalance = self.getAssetBalance('BNB')
-        return True if BNBbalance > self.minBNB else False
-
     # 利益が出る裁定機会の中から最適な取引を返す
     def getBestTransaction(self, data):
         # 最良ROIから順番にチェック。板に出ている取引量が十分かの確認(マージン込)
@@ -276,8 +275,8 @@ if __name__ == "__main__":
     #利益率、手数料、裁定取引に回す量の設定
     minROI = 1.0002
     commission = 0.00075
-    startingAmount = 0.5
+    startingAmount = 0.1
 
-    ba = BinanceArbitrage(client, 'ETH', startingAmount, minROI, commission)
+    ba = BinanceArbitrage(client, 'ETH', startingAmount, minROI, commission, False)
     ba.startArbitrage()
 
