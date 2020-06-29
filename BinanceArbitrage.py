@@ -6,6 +6,7 @@ import threading
 import configparser
 from binance.client import Client
 from binance.websockets import BinanceSocketManager
+import logging
 
 class BinanceArbitrage:
     def __init__(self, client, target, startingAmount, minROI, commission, transact):
@@ -15,6 +16,15 @@ class BinanceArbitrage:
         self.minROI = minROI + (commission * 3) # 手数料を考慮した利益率設定
         self.volumeMargin = 0.9                 # 板に出ているコイン量のマージン倍率(少なめに見積る)
         self.transact = transact
+
+        # ロガー初期化
+        self.logger = logging.getLogger('BinanceArbitrage')
+        self.logger.setLevel(logging.DEBUG)
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s\t[%(levelname)s]\t%(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
 
         # 全コイン種取得
         with open('alts.txt') as f:
@@ -49,6 +59,19 @@ class BinanceArbitrage:
         self.bm.start_ticker_socket(self.update_orderbook_dict)
         self.bm.start_user_socket(self.update_user)
 
+    # ログ出力ラッパー
+    def log_debug(self, msg):
+        self.logger.debug(msg)
+
+    def log_info(self, msg):
+        self.logger.info(msg)
+
+    def log_warn(self, msg):
+        self.logger.warn(msg)
+
+    def log_error(self, msg):
+        self.logger.error(msg)
+
     # BinanceSocketManagerからコールバックされる
     # ここでメイン処理をラッチする
     def update_orderbook_dict(self, msg):
@@ -56,24 +79,28 @@ class BinanceArbitrage:
             self.orderbook_tickers_dict[d['s']] = d
         data = self.arbitrageCheck()                 # 裁定機会を探す
         transaction = self.getBestTransaction(data)  # 最も優れた裁定機会を取得
-        print(transaction)
-        if self.transact:
-            pass
-            # TODO 本取引。ここで行うのではなく、別スレッドを立てる
+        if transaction:
+            self.log_debug(transaction)
+            if self.transact:
+                # TODO 本取引。ここで行うのではなく、別スレッドを立てる
+                pass
 
 
     # BinanceSocketManagerからコールバックされる
     # ここでアカウントの資産を更新する
     def update_user(self, msg=0):
         self.asset_balance = client.get_account()['balances']
+            
+        # 所持金と手数料用のBNBチェック
+        targetAmount = float(self.getFreeAssetBalance(self.target))
+        self.log_info('{} Amount = {}'.format(self.target, targetAmount))
+        
+        bnbAmount = float(self.getFreeAssetBalance('BNB'))
+        self.log_info('BNB Amount = {}'.format(bnbAmount))
 
         if self.transact:
-            # 所持金と手数料用のBNBチェック
-            targetAmount = float(self.getFreeAssetBalance(self.target))
             if self.startingAmount > targetAmount:
                 raise Exception('所持金が少ないです')
-
-            bnbAmount = float(self.getFreeAssetBalance('BNB'))
             if self.minBNB > bnbAmount:
                 raise Exception('手数料用BNBが少ないです')
 
@@ -83,7 +110,7 @@ class BinanceArbitrage:
 
     # サーバ-クライアントの時間差分確認
     def test_time(self):
-        print('server time - client time =', client.get_server_time()['serverTime']-int(time.time()*1000))
+        self.log_info('server time - client time ={}'.format(client.get_server_time()['serverTime']-int(time.time()*1000)) + '[msec]')
 
     # 所持金の取得
     def getFreeAssetBalance(self, asset):
@@ -115,7 +142,7 @@ class BinanceArbitrage:
     def arbitrageCheck(self):
         tgt = self.target
         data = []
-        #start = time.time()
+        start = time.time()
         for piv in self.pivots:
             for alt in self.alts:
                 vd = self.validData(tgt, piv, alt)
@@ -208,7 +235,7 @@ class BinanceArbitrage:
                                             '3rd':[vd2, tgtalt_a, 'buy'] })
                 except:
                     continue
-        #print('elapsed_time:{}'.format(time.time() - start) + '[sec]')
+        self.log_debug('arbitrageCheck elapsed_time:{}'.format((time.time() - start)*1000) + '[msec]')
         return data
 
     # 利益が出る裁定機会の中から最適な取引を返す
@@ -278,5 +305,6 @@ if __name__ == "__main__":
     startingAmount = 0.1
 
     ba = BinanceArbitrage(client, 'ETH', startingAmount, minROI, commission, False)
+    ba.test_time()
     ba.startArbitrage()
 
